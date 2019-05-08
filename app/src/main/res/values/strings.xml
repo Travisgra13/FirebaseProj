@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">berryLoc</string>
+    <string name="waiting_for_current_location_request">Waiting for Current Location Request</string>
+    <string name="get_current_loc">Get Current Location</string>
+    <string name="prompt">Click Get Current Location first to get present Location and then click send to Server</string>
+    <string name="firebaseInstruct">Send to Firebase</string>
+    <string name="success">Success Status: </string>
+    <string name="doAll">Complete Both Tasks</string>
+</resources>
