@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Environment;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -25,6 +26,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URL;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Path;
@@ -35,12 +40,9 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
     private DatabaseReference myDatabase;
+    private ServerSocket serverSocket;
     private com.example.travis.berryloc.Location currLocation;
-    private Button currLocButton;
-    private Button fireBaseButton;
-    private Button completeAllButton;
     private TextView locationResults;
-    private TextView status;
     private EditText widgetName;
     private String id;
 
@@ -49,40 +51,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         myDatabase = FirebaseDatabase.getInstance().getReference();
-        currLocButton = findViewById(R.id.currLocBut);
-        fireBaseButton = findViewById(R.id.serverRequestBut);
-        completeAllButton = findViewById(R.id.doAll);
         locationResults = findViewById(R.id.currLocResults);
-        status = findViewById(R.id.status);
         widgetName = findViewById(R.id.widgetId);
         widgetName.setText("Travis' Phone");
         widgetName.addTextChangedListener(textWatcher);
         id = widgetName.getText().toString();
-        status.setText("Success Status: Pending");
-       currLocButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                while(!makeLocationNewInstance()) {
-                    makeLocationNewInstance();
-                }
-                String results = "Longitude: " + currLocation.getLongitude() +
-                        "\nLatitude: " + currLocation.getLatitude() + "\nSession Token: " + MainActivity.this.id;
-                locationResults.setText(results);
-            }
-        });
-       fireBaseButton.setOnClickListener(new View.OnClickListener() {
-           @Override
-           public void onClick(View v) {
-               AddToFirebase();
-           }
-       });
-       completeAllButton.setOnClickListener(new View.OnClickListener() {
-           @Override
-           public void onClick(View v) {
-               doAll();
-           }
-
-        });
+        ServerTask serverTask = new ServerTask();
+        serverTask.execute();
     }
 
     TextWatcher textWatcher = new TextWatcher() {
@@ -101,6 +76,56 @@ public class MainActivity extends AppCompatActivity {
             id = s.toString();
         }
     };
+
+    public class Server extends Thread {
+
+        public Server() {
+            try {
+                serverSocket = new ServerSocket(12345);
+
+                Socket conn = serverSocket.accept();
+                PrintWriter out = new PrintWriter(conn.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                String inputLine;
+                while ((inputLine = in.readLine()) != null) {
+                    if (inputLine.equals("good bye ")) {
+                        out.write("Ok, Closing Connection");
+                        break;
+                    }
+                    else {
+                        out.write("Ok, Updating Firebase");
+                        doAll();
+                    }
+                    System.out.println(out.toString());
+                    out.flush();
+                }
+                out.flush();
+                out.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+                locationResults.setText("Something went wrong, Server Not Running");
+            }
+        }
+    }
+
+    private class ServerTask extends AsyncTask<Void, Void, Void> {
+
+        @Override
+        protected Void doInBackground(Void... voids) {
+            new Server().start();
+            return null;
+        }
+    }
+    @Override
+    protected void onStop() {
+        super.onStop();
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            locationResults.setText("Server Stopped");
+        }
+    }
 
     public boolean makeLocationNewInstance() {
         LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -137,9 +162,9 @@ public class MainActivity extends AppCompatActivity {
         fileCopy.makeCopy();
         myDatabase.child("Locations").child(this.id).child("Longitude").setValue(currLocation.getLongitude());
         myDatabase.child("Locations").child(this.id).child("Latitude").setValue(currLocation.getLatitude());
+        myDatabase.child("Locations").child(this.id).child("Type").setValue("Button");
         myDatabase.child("Locations").child(this.id).child("Code").setValue(fileCopy.getCode());
         myDatabase.push();
-        status.setText("Success Status: Database Updated");
     }
     public void doAll() {
         makeLocationNewInstance();
