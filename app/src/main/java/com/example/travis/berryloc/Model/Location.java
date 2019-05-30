@@ -1,6 +1,4 @@
-package com.example.travis.berryloc;
-
-import java.util.UUID;
+package com.example.travis.berryloc.Model;
 
 public class Location {
     private double Longitude;
