@@ -132,6 +132,8 @@ public class MainActivity extends AppCompatActivity {
 
     public class Server {
         private SocketAddress clientAddress;
+        private String address;
+        private String local;
         private Socket conn;
         private PrintWriter out;
         public Server() {
@@ -152,8 +154,8 @@ public class MainActivity extends AppCompatActivity {
 
                 String inputLine = in.readLine();
                 updateRegistry(inputLine);//get initial handshake
-                String address = fixIpAddress(clientAddress.toString());
-                String local = getLocalIpAdd();
+                address = fixIpAddress(clientAddress.toString());
+                local = getLocalIpAdd();
 
                 Socket socket = new Socket(address, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
@@ -162,12 +164,11 @@ public class MainActivity extends AppCompatActivity {
                 jsonObject.addProperty("ip", local);
                 out.write(jsonObject.toString());
                 out.flush();
-
-                //  out.close();
             } catch (IOException e) {
                 e.printStackTrace();
                 locationResults.setText("Something went wrong, Server Not Running");
-            }        }
+            }
+        }
             private String fixIpAddress(String clientAddress) {
                 StringBuilder sb = new StringBuilder(clientAddress);
                 int index = sb.indexOf(":");
@@ -178,17 +179,20 @@ public class MainActivity extends AppCompatActivity {
 
         public void sendCodeToClient(Event event) {
             System.out.println("Inside ///////////////////////////////////////////////////");
-                Gson gson = new Gson();
+            try {
+                Socket socket = new Socket(address, 6666);
+                out = new PrintWriter(socket.getOutputStream(), true);
+
                 ServerMessage serverMessage = processEventToMessage(event);
-               // String jsonServerMessage = gson.toJson(serverMessage);
                 JsonObject jsonServerMessage = new JsonObject();
                 jsonServerMessage.addProperty("command", serverMessage.getCommand());
                 jsonServerMessage.addProperty("name", (String) serverMessage.getPayload().get("name"));
                 jsonServerMessage.addProperty("code", (String) serverMessage.getPayload().get("code"));
                 out.write(jsonServerMessage.toString());
                 out.flush();
-
-
+            }catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         private ServerMessage processEventToMessage(Event event) {
@@ -216,7 +220,6 @@ public class MainActivity extends AppCompatActivity {
             JsonObject jsonObject = (JsonObject) ((JsonObject)json).get("berry-body");
             BerryBody berryBody = gson.fromJson(jsonObject, BerryBody.class);
             handshake.setBerryBody(berryBody);
-            //handshake = new Handshake();
             widgetName.setText(berryBody.getName());
             MainActivity.this.id = berryBody.getName();
             doAll();
