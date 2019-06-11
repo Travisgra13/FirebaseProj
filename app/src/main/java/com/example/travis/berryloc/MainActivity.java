@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        myDatabase = FirebaseDatabase.getInstance().getReference();
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations");
         myDatabase.addChildEventListener(new ChildEventListener() {
             @Override
             public void onChildAdded(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
@@ -71,9 +71,11 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onChildChanged(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
-                for (DataSnapshot child : dataSnapshot.getChildren()) {
-                    if (child.getKey().equals(MainActivity.this.id)) {
-                        final Event event = child.getValue(Event.class);
+                if (handshake == null) {
+                    return;
+                }
+                if (dataSnapshot.getKey().equals(MainActivity.this.id)) {
+                        final Event event = dataSnapshot.getValue(Event.class);
                         Thread thread = new Thread(new Runnable() {
                             @Override
                             public void run() {
@@ -83,10 +85,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                         });
                         thread.start();
-                        break;
                     }
-
-                }
             }
 
             @Override
@@ -151,9 +150,12 @@ public class MainActivity extends AppCompatActivity {
 
                 out = new PrintWriter(conn.getOutputStream(), false);
                 BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
-                String inputLine = in.readLine();
-                updateRegistry(inputLine);//get initial handshake
+                String inputLine;
+                StringBuilder sb = new StringBuilder();
+                while ((inputLine = in.readLine()) != null) {
+                    sb.append(inputLine);
+                }
+                updateRegistry(sb.toString());//get initial handshake
                 address = fixIpAddress(clientAddress.toString());
                 local = getLocalIpAdd();
 
@@ -164,6 +166,17 @@ public class MainActivity extends AppCompatActivity {
                 jsonObject.addProperty("ip", local);
                 out.write(jsonObject.toString());
                 out.flush();
+
+                conn = serverSocket.accept();
+                out = new PrintWriter(conn.getOutputStream(), false);
+                in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                String inputCodeLine;
+                StringBuilder codeSb = new StringBuilder();
+                while((inputCodeLine = in.readLine()) != null) {
+                    codeSb.append(inputCodeLine + "\n");
+                }
+                handshake.setCode(codeSb.toString());
+                doAll();
             } catch (IOException e) {
                 e.printStackTrace();
                 locationResults.setText("Something went wrong, Server Not Running");
@@ -190,6 +203,7 @@ public class MainActivity extends AppCompatActivity {
                 jsonServerMessage.addProperty("code", (String) serverMessage.getPayload().get("code"));
                 out.write(jsonServerMessage.toString());
                 out.flush();
+                doAll();
             }catch (IOException e) {
                 e.printStackTrace();
             }
@@ -222,7 +236,6 @@ public class MainActivity extends AppCompatActivity {
             handshake.setBerryBody(berryBody);
             widgetName.setText(berryBody.getName());
             MainActivity.this.id = berryBody.getName();
-            doAll();
         }
     }
 
@@ -289,10 +302,11 @@ public class MainActivity extends AppCompatActivity {
 
     public void AddToFirebase() {
         Date cal = Calendar.getInstance().getTime();
-        myDatabase.child("Locations").child(this.id).child("Longitude").setValue(currLocation.getLongitude());
-        myDatabase.child("Locations").child(this.id).child("Latitude").setValue(currLocation.getLatitude());
-        myDatabase.child("Locations").child(this.id).child("Type").setValue("Button");
-        myDatabase.child("Locations").child(this.id).child("Code").setValue("Test Code");
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations").child(this.id);
+        myDatabase.child("Longitude").setValue(currLocation.getLongitude());
+        myDatabase.child("Latitude").setValue(currLocation.getLatitude());
+        myDatabase.child("Type").setValue(handshake.getBerryBody().getType());
+        myDatabase.child("Code").setValue(handshake.getCode());
         myDatabase.push();
     }
     public void doAll() {

@@ -3,11 +3,13 @@ package com.example.travis.berryloc.Model;
 public class Handshake {
     private String command;
     private String source;
+    private String code;
     private BerryBody berryBody;
 
-    public Handshake(String command, String source, BerryBody berryBody) {
+    public Handshake(String command, String source, String code, BerryBody berryBody) {
         this.command = command;
         this.source = source;
+        this.code = code;
         this.berryBody = berryBody;
     }
 
@@ -25,6 +27,14 @@ public class Handshake {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public BerryBody getBerryBody() {
