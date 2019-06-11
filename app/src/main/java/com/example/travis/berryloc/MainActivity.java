@@ -134,10 +134,11 @@ public class MainActivity extends AppCompatActivity {
         private String address;
         private String local;
         private Socket conn;
+        private BufferedReader in;
         private PrintWriter out;
         public Server() {
             try {
-                serverSocket = new ServerSocket(4444);
+                serverSocket = new ServerSocket(8080);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -147,26 +148,8 @@ public class MainActivity extends AppCompatActivity {
             try {
                 conn = serverSocket.accept();
                 clientAddress = conn.getRemoteSocketAddress();
-
-                out = new PrintWriter(conn.getOutputStream(), false);
-                BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                String inputLine;
-                StringBuilder sb = new StringBuilder();
-                while ((inputLine = in.readLine()) != null) {
-                    sb.append(inputLine);
-                }
-                updateRegistry(sb.toString());//get initial handshake
-                address = fixIpAddress(clientAddress.toString());
-                local = getLocalIpAdd();
-
-                Socket socket = new Socket(address, 6666);
-                out = new PrintWriter(socket.getOutputStream(), true);
-                JsonObject jsonObject = new JsonObject();
-                jsonObject.addProperty("command", "fixedip-ack");
-                jsonObject.addProperty("ip", local);
-                out.write(jsonObject.toString());
-                out.flush();
-
+                initiateHandshake();
+                completeHandshake();
                 conn = serverSocket.accept();
                 out = new PrintWriter(conn.getOutputStream(), false);
                 in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
@@ -177,11 +160,47 @@ public class MainActivity extends AppCompatActivity {
                 }
                 handshake.setCode(codeSb.toString());
                 doAll();
+
+             //   initateAutoLocationUpdate();
             } catch (IOException e) {
                 e.printStackTrace();
                 locationResults.setText("Something went wrong, Server Not Running");
             }
         }
+
+            private void initiateHandshake() {
+                try {
+                    out = new PrintWriter(conn.getOutputStream(), false);
+                    in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    String inputLine;
+                    StringBuilder sb = new StringBuilder();
+                    while ((inputLine = in.readLine()) != null) {
+                        sb.append(inputLine);
+                    }
+                    updateRegistry(sb.toString());//get initial handshake
+                    address = fixIpAddress(clientAddress.toString());
+                    local = getLocalIpAdd();
+                //getLocalIpAdd();
+                }catch (IOException e) {
+                    e.printStackTrace();
+                    locationResults.setText("Something went wrong when initiating handshake, Server Not Running");
+                }
+            }
+
+            private void completeHandshake() {
+            try {
+                Socket socket = new Socket(address, 6666);
+                out = new PrintWriter(socket.getOutputStream(), true);
+                JsonObject jsonObject = new JsonObject();
+                jsonObject.addProperty("command", "fixedip-ack");
+                jsonObject.addProperty("ip", local);
+                out.write(jsonObject.toString());
+                out.flush();
+            }catch(IOException e) {
+                e.printStackTrace();
+                locationResults.setText("Something went wrong when completing handshake, Server Not Running");
+            }
+            }
             private String fixIpAddress(String clientAddress) {
                 StringBuilder sb = new StringBuilder(clientAddress);
                 int index = sb.indexOf(":");
@@ -201,9 +220,9 @@ public class MainActivity extends AppCompatActivity {
                 jsonServerMessage.addProperty("command", serverMessage.getCommand());
                 jsonServerMessage.addProperty("name", (String) serverMessage.getPayload().get("name"));
                 jsonServerMessage.addProperty("code", (String) serverMessage.getPayload().get("code"));
-                out.write(jsonServerMessage.toString());
+                out.write(event.getCode());
                 out.flush();
-                doAll();
+              //  doAll();
             }catch (IOException e) {
                 e.printStackTrace();
             }
@@ -236,6 +255,11 @@ public class MainActivity extends AppCompatActivity {
             handshake.setBerryBody(berryBody);
             widgetName.setText(berryBody.getName());
             MainActivity.this.id = berryBody.getName();
+        }
+
+        private void initateAutoLocationUpdate() {
+            LocIntervalTask locIntervalTask = new LocIntervalTask();
+            locIntervalTask.execute(MainActivity.this);
         }
     }
 
