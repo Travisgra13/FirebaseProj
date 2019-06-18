@@ -46,6 +46,8 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
     private DatabaseReference myDatabase;
@@ -71,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onChildChanged(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
-                if (handshake == null) {
+                if (handshake.getCode() == null) {
                     return;
                 }
                 if (dataSnapshot.getKey().equals(MainActivity.this.id)) {
@@ -161,7 +163,6 @@ public class MainActivity extends AppCompatActivity {
                 handshake.setCode(codeSb.toString());
                 doAll();
 
-             //   initateAutoLocationUpdate();
             } catch (IOException e) {
                 e.printStackTrace();
                 locationResults.setText("Something went wrong, Server Not Running");
@@ -180,7 +181,6 @@ public class MainActivity extends AppCompatActivity {
                     updateRegistry(sb.toString());//get initial handshake
                     address = fixIpAddress(clientAddress.toString());
                     local = getLocalIpAdd();
-                //getLocalIpAdd();
                 }catch (IOException e) {
                     e.printStackTrace();
                     locationResults.setText("Something went wrong when initiating handshake, Server Not Running");
@@ -196,6 +196,8 @@ public class MainActivity extends AppCompatActivity {
                 jsonObject.addProperty("ip", local);
                 out.write(jsonObject.toString());
                 out.flush();
+                AutoLocationUpdate autoLocationUpdate = new AutoLocationUpdate();
+                autoLocationUpdate.startAutoUpdate();
             }catch(IOException e) {
                 e.printStackTrace();
                 locationResults.setText("Something went wrong when completing handshake, Server Not Running");
@@ -214,15 +216,9 @@ public class MainActivity extends AppCompatActivity {
             try {
                 Socket socket = new Socket(address, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
-
-                ServerMessage serverMessage = processEventToMessage(event);
-                JsonObject jsonServerMessage = new JsonObject();
-                jsonServerMessage.addProperty("command", serverMessage.getCommand());
-                jsonServerMessage.addProperty("name", (String) serverMessage.getPayload().get("name"));
-                jsonServerMessage.addProperty("code", (String) serverMessage.getPayload().get("code"));
-                out.write(event.getCode());
+                String command = "code-save ";
+                out.write(command + event.getCode());
                 out.flush();
-              //  doAll();
             }catch (IOException e) {
                 e.printStackTrace();
             }
@@ -240,8 +236,7 @@ public class MainActivity extends AppCompatActivity {
                         {Manifest.permission.ACCESS_WIFI_STATE}, 1);
             }
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            String ip = Formatter.formatIpAddress(wm.getConnectionInfo().getIpAddress());
-            return ip;
+            return Formatter.formatIpAddress(wm.getConnectionInfo().getIpAddress());
         }
 
         private void updateRegistry(String jsonFromClient) {
@@ -256,11 +251,6 @@ public class MainActivity extends AppCompatActivity {
             widgetName.setText(berryBody.getName());
             MainActivity.this.id = berryBody.getName();
         }
-
-        private void initateAutoLocationUpdate() {
-            LocIntervalTask locIntervalTask = new LocIntervalTask();
-            locIntervalTask.execute(MainActivity.this);
-        }
     }
 
     private class ServerTask extends AsyncTask<Void, Void, Void> {
@@ -271,16 +261,6 @@ public class MainActivity extends AppCompatActivity {
             server.run();
             return null;
         }
-    }
-
-
-
-    private class SendCodeTask extends AsyncTask<Event,Void, Void> {
-    @Override
-        protected Void doInBackground(Event... events) {
-        server.sendCodeToClient(events[0]);
-        return null;
-    }
     }
     @Override
     protected void onStop() {
@@ -325,7 +305,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
     public void AddToFirebase() {
-        Date cal = Calendar.getInstance().getTime();
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations").child(this.id);
         myDatabase.child("Longitude").setValue(currLocation.getLongitude());
         myDatabase.child("Latitude").setValue(currLocation.getLatitude());
@@ -340,6 +319,23 @@ public class MainActivity extends AppCompatActivity {
         locationResults.setText(results);
         AddToFirebase();
 
+    }
+
+
+    public class AutoLocationUpdate {
+        public Timer timer;
+       public synchronized void startAutoUpdate() {
+            if (timer == null) {
+                TimerTask task = new TimerTask() {
+                    @Override
+                    public void run() {
+                        MainActivity.this.doAll();
+                    }
+                };
+                timer = new Timer();
+                timer.scheduleAtFixedRate(task, 0, 10000);
+            }
+       }
     }
 
 
