@@ -71,7 +71,8 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         commands = new ArrayList<>();
-        firebase = FirebaseDatabase.getInstance().getReference().child("Locations");
+
+        firebase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
         firebase.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
@@ -95,6 +96,7 @@ public class MainActivity extends AppCompatActivity {
                 if (handshake.getCode() == null) {
                     return;
                 }
+                updateCommands();
                 if (dataSnapshot.getKey().equals(MainActivity.this.id)) {
                         final Event event = dataSnapshot.getValue(Event.class);
                         Thread thread = new Thread(new Runnable() {
@@ -125,28 +127,12 @@ public class MainActivity extends AppCompatActivity {
         locationResults = findViewById(R.id.currLocResults);
         widgetName = findViewById(R.id.widgetId);
         widgetName.setText("Travis' Phone");
-        widgetName.addTextChangedListener(textWatcher);
         id = widgetName.getText().toString();
         serverTask = new ServerTask();
         serverTask.execute();
     }
 
-    TextWatcher textWatcher = new TextWatcher() {
-        @Override
-        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
 
-        }
-
-        @Override
-        public void onTextChanged(CharSequence s, int start, int before, int count) {
-
-        }
-
-        @Override
-        public void afterTextChanged(Editable s) {
-            id = s.toString();
-        }
-    };
 
     public class Server {
         private SocketAddress clientAddress;
@@ -172,12 +158,16 @@ public class MainActivity extends AppCompatActivity {
                 conn = serverSocket.accept();
                 out = new PrintWriter(conn.getOutputStream(), false);
                 in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
                 String inputCodeLine;
                 StringBuilder codeSb = new StringBuilder();
                 while((inputCodeLine = in.readLine()) != null) {
                     codeSb.append(inputCodeLine + "\n");
                 }
+
                 handshake.setCode(codeSb.toString());
+
+                updateCommands();
                 doAll();
                 buttonPressProcess();
 
@@ -196,7 +186,7 @@ public class MainActivity extends AppCompatActivity {
                     while ((inputLine = in.readLine()) != null) {
                         sb.append(inputLine);
                     }
-                    updateRegistry(sb.toString());//get initial handshake\
+                    updateRegistry(sb.toString());//get initial handshake
                     address = fixIpAddress(clientAddress.toString());
                     local = getLocalIpAdd();
                 }catch (IOException e) {
@@ -279,13 +269,55 @@ public class MainActivity extends AppCompatActivity {
                            // MainActivity.this.AddToCallbackList(json);
                         }
                         else if (((JsonObject) json).get("event") != null && ((JsonObject) json).get("name") != null) {
-                            MainActivity.this.ParseList(json);
+                            ParseList(json);
                         }
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
 
+            }
+        }
+
+        private void ParseList(JsonElement json) {
+            myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+            String command = ((JsonObject) json).get("command").toString();
+            String event = ((JsonObject) json).get("event").toString();
+            String name = ((JsonObject) json).get("name").toString();
+
+            Iterable <DataSnapshot> calls = snap.getChildren();
+            //add ipAddress to Callback
+            String destination;
+            String key;
+            String viableClient;
+            for (DataSnapshot child : calls) {
+                String source = (String) child.child("Source").getValue();
+                String attribute = (String) child.child("Attribute").getValue();
+                if (name.equals(source) && event.equals(attribute)) {
+                    destination = (String) child.child("Destination").getValue();
+                    key = (String) child.child("Key").getValue();
+                    viableClient = (String) child.child("Address").getValue();
+                    JsonObject jsonObject = new JsonObject();
+                    jsonObject.addProperty("attribute", attribute);
+                    jsonObject.addProperty("source", source);
+                    jsonObject.addProperty("key", key);
+                    sendToViableClient(viableClient, jsonObject);
+
+                }
+            }
+            System.out.println("done");
+
+        }
+
+        private void sendToViableClient(String address, JsonObject json) {
+            Socket socket = null;
+            try {
+                socket = new Socket(address, 6666);
+                out = new PrintWriter(socket.getOutputStream(), true);
+                out.write(json.toString());
+                out.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
 
@@ -375,24 +407,15 @@ public class MainActivity extends AppCompatActivity {
         myDatabase.push();
     }
 
-    public void ParseList(JsonElement json) {
-        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
-        String command = ((JsonObject) json).get("command").toString();
-        String event = ((JsonObject) json).get("event").toString();
-        String name = ((JsonObject) json).get("name").toString();
-
-        Iterable <DataSnapshot> calls = snap.getChildren();
-
-        String destination = new String();
-        String key = new String();
-        for (DataSnapshot child : calls) {
-            if (name.equals(child.child("Source").getValue()) && event.equals(child.child("Attribute").getValue())) {
-                destination = "Test";
-            }
+    public void AddToCallbackList() {
+        //work here
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks").child(this.id);
+        int counter = 0;
+        for(int i = 0; i < commands.size(); i++) {
         }
-        System.out.println("done");
-
     }
+
+
     public void doAll() {
         makeLocationNewInstance();
         String results = "Longitude: " + currLocation.getLongitude() +
@@ -418,6 +441,13 @@ public class MainActivity extends AppCompatActivity {
             }
        }
     }
+
+    public void updateCommands() { //Update Attributes in the code running on this server's client
+        AttributeParser attributeParser = new AttributeParser(handshake.getCode());
+        commands = attributeParser.parse();
+
+    }
+
 
 
 }
