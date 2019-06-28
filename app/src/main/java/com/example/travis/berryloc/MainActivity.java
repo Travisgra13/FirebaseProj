@@ -27,6 +27,7 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -44,31 +45,49 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
     private DatabaseReference myDatabase;
+    private DatabaseReference firebase;
     private ServerSocket serverSocket;
     private com.example.travis.berryloc.Model.Location currLocation;
     private TextView locationResults;
     private EditText widgetName;
     private Handshake handshake;
+    private DataSnapshot snap;
     private ServerTask serverTask;
     private String id;
     private Server server;
+    private ArrayList<String> commands;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        commands = new ArrayList<>();
+        firebase = FirebaseDatabase.getInstance().getReference().child("Locations");
+        firebase.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                snap = dataSnapshot;
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations");
         myDatabase.addChildEventListener(new ChildEventListener() {
+
             @Override
             public void onChildAdded(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
-
             }
 
             @Override
@@ -92,12 +111,10 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onChildRemoved(@NonNull DataSnapshot dataSnapshot) {
-
             }
 
             @Override
             public void onChildMoved(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
-
             }
 
             @Override
@@ -162,6 +179,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 handshake.setCode(codeSb.toString());
                 doAll();
+                buttonPressProcess();
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -178,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
                     while ((inputLine = in.readLine()) != null) {
                         sb.append(inputLine);
                     }
-                    updateRegistry(sb.toString());//get initial handshake
+                    updateRegistry(sb.toString());//get initial handshake\
                     address = fixIpAddress(clientAddress.toString());
                     local = getLocalIpAdd();
                 }catch (IOException e) {
@@ -212,7 +230,6 @@ public class MainActivity extends AppCompatActivity {
             }
 
         public void sendCodeToClient(Event event) {
-            System.out.println("Inside ///////////////////////////////////////////////////");
             try {
                 Socket socket = new Socket(address, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
@@ -222,12 +239,6 @@ public class MainActivity extends AppCompatActivity {
             }catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-
-        private ServerMessage processEventToMessage(Event event) {
-            ServerMessage serverMessage = new ServerMessage();
-            serverMessage.readyPayload(event.getName(), event.getCode());
-            return serverMessage;
         }
 
         private String getLocalIpAdd() {
@@ -251,6 +262,33 @@ public class MainActivity extends AppCompatActivity {
             widgetName.setText(berryBody.getName());
             MainActivity.this.id = berryBody.getName();
         }
+
+        private void buttonPressProcess() {
+            while (true) {
+                try {
+                    conn = serverSocket.accept();
+                    in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    String inputCodeLine;
+                    StringBuilder codeSb = new StringBuilder();
+                    JsonParser jsonParser = new JsonParser();
+                    while((inputCodeLine = in.readLine()) != null) {
+                        codeSb.append(inputCodeLine);
+                        JsonElement json = jsonParser.parse(inputCodeLine);
+                        System.out.println(json);
+                        if(((JsonObject) json).get("event") == null) {
+                           // MainActivity.this.AddToCallbackList(json);
+                        }
+                        else if (((JsonObject) json).get("event") != null && ((JsonObject) json).get("name") != null) {
+                            MainActivity.this.ParseList(json);
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        }
+
     }
 
     private class ServerTask extends AsyncTask<Void, Void, Void> {
@@ -304,6 +342,15 @@ public class MainActivity extends AppCompatActivity {
             return true;
         }
 
+
+    public void UpdateLocationOnly() {
+        makeLocationNewInstance();
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations").child(this.id);
+        myDatabase.child("Longitude").setValue(currLocation.getLongitude());
+        myDatabase.child("Latitude").setValue(currLocation.getLatitude());
+        myDatabase.push();
+    }
+
     public void AddToFirebase() {
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations").child(this.id);
         myDatabase.child("Longitude").setValue(currLocation.getLongitude());
@@ -311,6 +358,40 @@ public class MainActivity extends AppCompatActivity {
         myDatabase.child("Type").setValue(handshake.getBerryBody().getType());
         myDatabase.child("Code").setValue(handshake.getCode());
         myDatabase.push();
+    }
+
+    public void AddToCallbackList(JsonElement json) {
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks").child("Callback0");
+        String command = ((JsonObject) json).get("command").toString();
+        String destination = ((JsonObject) json).get("destination").toString();
+        String source = ((JsonObject) json).get("source").toString();
+        String attribute = ((JsonObject) json).get("attribute").toString();
+        String key = ((JsonObject) json).get("key").toString();
+        myDatabase.child("Command").setValue(command);
+        myDatabase.child("Destination").setValue(destination);
+        myDatabase.child("Source").setValue(source);
+        myDatabase.child("Attribute").setValue(attribute);
+        myDatabase.child("Key").setValue(key);
+        myDatabase.push();
+    }
+
+    public void ParseList(JsonElement json) {
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+        String command = ((JsonObject) json).get("command").toString();
+        String event = ((JsonObject) json).get("event").toString();
+        String name = ((JsonObject) json).get("name").toString();
+
+        Iterable <DataSnapshot> calls = snap.getChildren();
+
+        String destination = new String();
+        String key = new String();
+        for (DataSnapshot child : calls) {
+            if (name.equals(child.child("Source").getValue()) && event.equals(child.child("Attribute").getValue())) {
+                destination = "Test";
+            }
+        }
+        System.out.println("done");
+
     }
     public void doAll() {
         makeLocationNewInstance();
@@ -329,11 +410,11 @@ public class MainActivity extends AppCompatActivity {
                 TimerTask task = new TimerTask() {
                     @Override
                     public void run() {
-                        MainActivity.this.doAll();
+                        MainActivity.this.UpdateLocationOnly();
                     }
                 };
                 timer = new Timer();
-                timer.scheduleAtFixedRate(task, 0, 10000);
+                timer.scheduleAtFixedRate(task, 0, 30000);
             }
        }
     }
