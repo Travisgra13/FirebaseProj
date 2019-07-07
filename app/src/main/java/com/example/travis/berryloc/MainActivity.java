@@ -27,12 +27,14 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -45,22 +47,26 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
     private DatabaseReference myDatabase;
     private DatabaseReference firebase;
+    private DatabaseReference callBacks;
     private ServerSocket serverSocket;
     private com.example.travis.berryloc.Model.Location currLocation;
     private TextView locationResults;
     private EditText widgetName;
     private Handshake handshake;
     private DataSnapshot snap;
+    private DataSnapshot callBackSnap;
     private ServerTask serverTask;
     private String id;
     private Server server;
@@ -72,7 +78,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         commands = new ArrayList<>();
 
-        firebase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+        firebase = FirebaseDatabase.getInstance().getReference().child("Commands");
         firebase.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
@@ -83,6 +89,14 @@ public class MainActivity extends AppCompatActivity {
             public void onCancelled(@NonNull DatabaseError databaseError) {
 
             }
+        });
+        callBacks = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+        callBacks.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {callBackSnap = dataSnapshot;}
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) { }
         });
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations");
         myDatabase.addChildEventListener(new ChildEventListener() {
@@ -151,22 +165,11 @@ public class MainActivity extends AppCompatActivity {
 
         public void run() {
             try {
-                conn = serverSocket.accept();
+                conn = serverSocket.accept(); //waits for client to connect
                 clientAddress = conn.getRemoteSocketAddress();
-                initiateHandshake();
+                initiateHandshake(); //does preliminary communication
                 completeHandshake();
-                conn = serverSocket.accept();
-                out = new PrintWriter(conn.getOutputStream(), false);
-                in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
-                String inputCodeLine;
-                StringBuilder codeSb = new StringBuilder();
-                while((inputCodeLine = in.readLine()) != null) {
-                    codeSb.append(inputCodeLine + "\n");
-                }
-
-                handshake.setCode(codeSb.toString());
-
+                readInRemoteCalls(); //reads in the remote calls from the client
                 updateCommands();
                 doAll();
                 buttonPressProcess();
@@ -176,6 +179,37 @@ public class MainActivity extends AppCompatActivity {
                 locationResults.setText("Something went wrong, Server Not Running");
             }
         }
+            private void readInRemoteCalls() throws IOException {
+                boolean doneWaiting = false;
+                while (!doneWaiting) {
+                    serverSocket.setSoTimeout(500);
+                    try {
+                        conn = serverSocket.accept();
+
+                        out = new PrintWriter(conn.getOutputStream(), false);
+                        in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
+                        String inputCodeLine;
+                        StringBuilder codeSb = new StringBuilder();
+                        while ((inputCodeLine = in.readLine()) != null) {
+                            codeSb.append(inputCodeLine + "\n");
+                        }
+                        JsonParser parser = new JsonParser();
+                        try {
+                           JsonObject json = (JsonObject) parser.parse(codeSb.toString()); //Check to see if is in json form, if so it is a remote call, if not it is the client's code
+                           AddToCallbackList(json); //send remote to firebase
+
+
+                        }catch (JsonSyntaxException ex) {
+                            doneWaiting = true;
+                            handshake.setCode(codeSb.toString());
+                        }
+                    } catch (SocketTimeoutException e) {
+                        doneWaiting = true;
+                    }
+                }
+
+            }
 
             private void initiateHandshake() {
                 try {
@@ -224,6 +258,10 @@ public class MainActivity extends AppCompatActivity {
                 Socket socket = new Socket(address, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
                 String command = "code-save ";
+                if (event.getCode() == null) {
+                    return;
+                }
+                handshake.setCode(event.getCode());
                 out.write(command + event.getCode());
                 out.flush();
             }catch (IOException e) {
@@ -256,6 +294,7 @@ public class MainActivity extends AppCompatActivity {
         private void buttonPressProcess() {
             while (true) {
                 try {
+                    serverSocket.setSoTimeout(0);
                     conn = serverSocket.accept();
                     in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                     String inputCodeLine;
@@ -265,10 +304,13 @@ public class MainActivity extends AppCompatActivity {
                         codeSb.append(inputCodeLine);
                         JsonElement json = jsonParser.parse(inputCodeLine);
                         System.out.println(json);
-                        if(((JsonObject) json).get("event") == null) {
-                           // MainActivity.this.AddToCallbackList(json);
+                        if (((JsonObject) json).get("status") != null) {
+                            PurgeCallback(MainActivity.this.id);
                         }
-                        else if (((JsonObject) json).get("event") != null && ((JsonObject) json).get("name") != null) {
+                        else if(((JsonObject) json).get("event") == null) { //If is a new remote Call
+                            MainActivity.this.AddToCallbackList(json);
+                        }
+                        else if (((JsonObject) json).get("event") != null && ((JsonObject) json).get("name") != null) { //If is an event call
                             ParseList(json);
                         }
                     }
@@ -278,30 +320,47 @@ public class MainActivity extends AppCompatActivity {
 
             }
         }
+        private void PurgeCallback(final String firebaseID) {
+            for (DataSnapshot child : callBackSnap.getChildren()) {
+                String childName = (String) child.child("Source").getValue();
+                childName = FixStringsFromFirebase(childName);
+                if (childName.equals(firebaseID)) {
+                    child.getRef().removeValue();
+                }
+            }
+        }
+
+        private String FixStringsFromFirebase(String myString) {
+            StringBuilder sb = new StringBuilder(myString);
+            int index;
+            while ((index = sb.indexOf("\"")) != -1) { //while an " is found, necessary because firebase adds quotations sometimes
+                sb.deleteCharAt(index);
+            }
+            myString = sb.toString();
+            return myString;
+        }
 
         private void ParseList(JsonElement json) {
-            myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks");
-            String command = ((JsonObject) json).get("command").toString();
-            String event = ((JsonObject) json).get("event").toString();
-            String name = ((JsonObject) json).get("name").toString();
+            callBacks = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+            String command = FixStringsFromFirebase(((JsonObject) json).get("command").toString());
+            String event = FixStringsFromFirebase(((JsonObject) json).get("event").toString());
+            String name = FixStringsFromFirebase(((JsonObject) json).get("name").toString());
 
-            Iterable <DataSnapshot> calls = snap.getChildren();
+            Iterable <DataSnapshot> calls = callBackSnap.getChildren();
             //add ipAddress to Callback
-            String destination;
+            String address;
             String key;
-            String viableClient;
             for (DataSnapshot child : calls) {
-                String source = (String) child.child("Source").getValue();
-                String attribute = (String) child.child("Attribute").getValue();
+                String source = FixStringsFromFirebase((String) child.child("Source").getValue());
+                String attribute = FixStringsFromFirebase((String) child.child("Attribute").getValue());
                 if (name.equals(source) && event.equals(attribute)) {
-                    destination = (String) child.child("Destination").getValue();
-                    key = (String) child.child("Key").getValue();
-                    viableClient = (String) child.child("Address").getValue();
+                    key = FixStringsFromFirebase((String) child.child("Key").getValue());
+                    address = FixStringsFromFirebase((String) child.child("zClient Address").getValue());
                     JsonObject jsonObject = new JsonObject();
                     jsonObject.addProperty("attribute", attribute);
                     jsonObject.addProperty("source", source);
                     jsonObject.addProperty("key", key);
-                    sendToViableClient(viableClient, jsonObject);
+                    sendToViableClient(jsonObject, address);
 
                 }
             }
@@ -309,14 +368,13 @@ public class MainActivity extends AppCompatActivity {
 
         }
 
-        private void sendToViableClient(String address, JsonObject json) {
-            Socket socket = null;
+        private void sendToViableClient(JsonObject json, String clientAddress) {
             try {
-                socket = new Socket(address, 6666);
+                Socket socket = new Socket(clientAddress, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
                 out.write(json.toString());
                 out.flush();
-            } catch (IOException e) {
+            }catch (IOException e) {
                 e.printStackTrace();
             }
         }
@@ -389,30 +447,32 @@ public class MainActivity extends AppCompatActivity {
         myDatabase.child("Latitude").setValue(currLocation.getLatitude());
         myDatabase.child("Type").setValue(handshake.getBerryBody().getType());
         myDatabase.child("Code").setValue(handshake.getCode());
+        myDatabase.child("zClient Address").setValue(this.server.fixIpAddress(server.clientAddress.toString()));
         myDatabase.push();
     }
 
     public void AddToCallbackList(JsonElement json) {
-        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks").child("Callback0");
         String command = ((JsonObject) json).get("command").toString();
         String destination = ((JsonObject) json).get("destination").toString();
         String source = ((JsonObject) json).get("source").toString();
         String attribute = ((JsonObject) json).get("attribute").toString();
         String key = ((JsonObject) json).get("key").toString();
-        myDatabase.child("Command").setValue(command);
-        myDatabase.child("Destination").setValue(destination);
-        myDatabase.child("Source").setValue(source);
-        myDatabase.child("Attribute").setValue(attribute);
-        myDatabase.child("Key").setValue(key);
-        myDatabase.push();
+        callBacks = FirebaseDatabase.getInstance().getReference().child("Callbacks").child("CallBack: " + key + destination);
+        callBacks.child("Command").setValue(command);
+        callBacks.child("Destination").setValue(destination);
+        callBacks.child("Source").setValue(source);
+        callBacks.child("Attribute").setValue(attribute);
+        callBacks.child("Key").setValue(key);
+        callBacks.push();
     }
 
     public void AddToCallbackList() {
         //work here
-        myDatabase = FirebaseDatabase.getInstance().getReference().child("Callbacks").child(this.id);
-        int counter = 0;
+        myDatabase = FirebaseDatabase.getInstance().getReference().child("Commands").child(this.id);
         for(int i = 0; i < commands.size(); i++) {
+            myDatabase.child("command " + (i + 1)).setValue(commands.get(i));
         }
+        myDatabase.push();
     }
 
 
@@ -445,6 +505,7 @@ public class MainActivity extends AppCompatActivity {
     public void updateCommands() { //Update Attributes in the code running on this server's client
         AttributeParser attributeParser = new AttributeParser(handshake.getCode());
         commands = attributeParser.parse();
+        AddToCallbackList();
 
     }
 
