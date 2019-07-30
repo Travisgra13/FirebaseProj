@@ -17,6 +17,7 @@ import android.text.TextWatcher;
 import android.text.format.Formatter;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.example.travis.berryloc.Model.BerryBody;
 import com.example.travis.berryloc.Model.Event;
@@ -78,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         commands = new ArrayList<>();
 
-        firebase = FirebaseDatabase.getInstance().getReference().child("Commands");
+        firebase = FirebaseDatabase.getInstance().getReference().child("Locations");
         firebase.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
@@ -91,12 +92,17 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         callBacks = FirebaseDatabase.getInstance().getReference().child("Callbacks");
+        callBacks.keepSynced(true);
         callBacks.addValueEventListener(new ValueEventListener() {
             @Override
-            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {callBackSnap = dataSnapshot;}
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                callBackSnap = dataSnapshot;
+            }
 
             @Override
-            public void onCancelled(@NonNull DatabaseError databaseError) { }
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
         });
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Locations");
         myDatabase.addChildEventListener(new ChildEventListener() {
@@ -112,17 +118,17 @@ public class MainActivity extends AppCompatActivity {
                 }
                 updateCommands();
                 if (dataSnapshot.getKey().equals(MainActivity.this.id)) {
-                        final Event event = dataSnapshot.getValue(Event.class);
-                        Thread thread = new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                //Fixme This will become a problem later
-                                event.setName(MainActivity.this.id);
-                                server.sendCodeToClient(event);
-                            }
-                        });
-                        thread.start();
-                    }
+                    final Event event = dataSnapshot.getValue(Event.class);
+                    Thread thread = new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            //Fixme This will become a problem later
+                            event.setName(MainActivity.this.id);
+                            server.sendCodeToClient(event);
+                        }
+                    });
+                    thread.start();
+                }
             }
 
             @Override
@@ -169,6 +175,7 @@ public class MainActivity extends AppCompatActivity {
                 clientAddress = conn.getRemoteSocketAddress();
                 initiateHandshake(); //does preliminary communication
                 completeHandshake();
+                PurgeCallback(MainActivity.this.id);
                 readInRemoteCalls(); //reads in the remote calls from the client
                 updateCommands();
                 doAll();
@@ -176,60 +183,60 @@ public class MainActivity extends AppCompatActivity {
 
             } catch (IOException e) {
                 e.printStackTrace();
-                locationResults.setText("Something went wrong, Server Not Running");
+                Toast.makeText(MainActivity.this.getApplicationContext(), "Something went wrong initializing server, Server Not Running", Toast.LENGTH_LONG);
             }
         }
-            private void readInRemoteCalls() throws IOException {
-                boolean doneWaiting = false;
-                while (!doneWaiting) {
-                    serverSocket.setSoTimeout(500);
-                    try {
-                        conn = serverSocket.accept();
-
-                        out = new PrintWriter(conn.getOutputStream(), false);
-                        in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
-                        String inputCodeLine;
-                        StringBuilder codeSb = new StringBuilder();
-                        while ((inputCodeLine = in.readLine()) != null) {
-                            codeSb.append(inputCodeLine + "\n");
-                        }
-                        JsonParser parser = new JsonParser();
-                        try {
-                           JsonObject json = (JsonObject) parser.parse(codeSb.toString()); //Check to see if is in json form, if so it is a remote call, if not it is the client's code
-                           AddToCallbackList(json); //send remote to firebase
-
-
-                        }catch (JsonSyntaxException ex) {
-                            doneWaiting = true;
-                            handshake.setCode(codeSb.toString());
-                        }
-                    } catch (SocketTimeoutException e) {
-                        doneWaiting = true;
-                    }
-                }
-
-            }
-
-            private void initiateHandshake() {
+        private void readInRemoteCalls() throws IOException {
+            boolean doneWaiting = false;
+            while (!doneWaiting) {
+                serverSocket.setSoTimeout(500);
                 try {
+                    conn = serverSocket.accept();
+
                     out = new PrintWriter(conn.getOutputStream(), false);
                     in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    String inputLine;
-                    StringBuilder sb = new StringBuilder();
-                    while ((inputLine = in.readLine()) != null) {
-                        sb.append(inputLine);
+
+                    String inputCodeLine;
+                    StringBuilder codeSb = new StringBuilder();
+                    while ((inputCodeLine = in.readLine()) != null) {
+                        codeSb.append(inputCodeLine + "\n");
                     }
-                    updateRegistry(sb.toString());//get initial handshake
-                    address = fixIpAddress(clientAddress.toString());
-                    local = getLocalIpAdd();
-                }catch (IOException e) {
-                    e.printStackTrace();
-                    locationResults.setText("Something went wrong when initiating handshake, Server Not Running");
+                    JsonParser parser = new JsonParser();
+                    try {
+                        JsonObject json = (JsonObject) parser.parse(codeSb.toString()); //Check to see if is in json form, if so it is a remote call, if not it is the client's code
+                        AddToCallbackList(json); //send remote to firebase
+
+
+                    }catch (JsonSyntaxException ex) {
+                        doneWaiting = true;
+                        handshake.setCode(codeSb.toString());
+                    }
+                } catch (SocketTimeoutException e) {
+                    doneWaiting = true;
                 }
             }
 
-            private void completeHandshake() {
+        }
+
+        private void initiateHandshake() {
+            try {
+                out = new PrintWriter(conn.getOutputStream(), false);
+                in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                String inputLine;
+                StringBuilder sb = new StringBuilder();
+                while ((inputLine = in.readLine()) != null) {
+                    sb.append(inputLine);
+                }
+                updateRegistry(sb.toString());//get initial handshake
+                address = fixIpAddress(clientAddress.toString());
+                local = getLocalIpAdd();
+            }catch (IOException e) {
+                e.printStackTrace();
+                Toast.makeText(MainActivity.this.getApplicationContext(), "Something went wrong when initiating handshake, Server Not Running", Toast.LENGTH_LONG);
+            }
+        }
+
+        private void completeHandshake() {
             try {
                 Socket socket = new Socket(address, 6666);
                 out = new PrintWriter(socket.getOutputStream(), true);
@@ -238,20 +245,22 @@ public class MainActivity extends AppCompatActivity {
                 jsonObject.addProperty("ip", local);
                 out.write(jsonObject.toString());
                 out.flush();
+                out.close();
+                socket.close();
                 AutoLocationUpdate autoLocationUpdate = new AutoLocationUpdate();
                 autoLocationUpdate.startAutoUpdate();
             }catch(IOException e) {
                 e.printStackTrace();
-                locationResults.setText("Something went wrong when completing handshake, Server Not Running");
+                Toast.makeText(MainActivity.this.getApplicationContext(), "Something went wrong when completing handshake, Server Not Running", Toast.LENGTH_LONG);
             }
-            }
-            private String fixIpAddress(String clientAddress) {
-                StringBuilder sb = new StringBuilder(clientAddress);
-                int index = sb.indexOf(":");
-                sb.delete(index, index + 6);
-                sb.delete(0,1);
+        }
+        private String fixIpAddress(String clientAddress) {
+            StringBuilder sb = new StringBuilder(clientAddress);
+            int index = sb.indexOf(":");
+            sb.delete(index, index + 6);
+            sb.delete(0,1);
             return sb.toString();
-            }
+        }
 
         public void sendCodeToClient(Event event) {
             try {
@@ -264,6 +273,8 @@ public class MainActivity extends AppCompatActivity {
                 handshake.setCode(event.getCode());
                 out.write(command + event.getCode());
                 out.flush();
+                out.close();
+                socket.close();
             }catch (IOException e) {
                 e.printStackTrace();
             }
@@ -306,14 +317,20 @@ public class MainActivity extends AppCompatActivity {
                         System.out.println(json);
                         if (((JsonObject) json).get("status") != null) {
                             PurgeCallback(MainActivity.this.id);
+                            continue;
                         }
-                        else if(((JsonObject) json).get("event") == null) { //If is a new remote Call
+                        String command = FixStringsFromFirebase(((JsonObject) json).get("command").toString());
+                        if (command.equals("remote-response")) {
+                            break;
+                        }
+                        else if(command.equals("remote-command")) { //If is a new remote Call
                             MainActivity.this.AddToCallbackList(json);
                         }
-                        else if (((JsonObject) json).get("event") != null && ((JsonObject) json).get("name") != null) { //If is an event call
+                        else if (command.equals("event")) { //If is an event call
                             ParseList(json);
                         }
                     }
+                    conn.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -321,11 +338,13 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         private void PurgeCallback(final String firebaseID) {
-            for (DataSnapshot child : callBackSnap.getChildren()) {
-                String childName = (String) child.child("Source").getValue();
-                childName = FixStringsFromFirebase(childName);
-                if (childName.equals(firebaseID)) {
-                    child.getRef().removeValue();
+            if (callBackSnap != null) {
+                for (DataSnapshot child : callBackSnap.getChildren()) {
+                    String childName = (String) child.child("Source").getValue();
+                    childName = FixStringsFromFirebase(childName);
+                    if (childName.equals(firebaseID)) {
+                        child.getRef().removeValue();
+                    }
                 }
             }
         }
@@ -341,22 +360,28 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void ParseList(JsonElement json) {
-            callBacks = FirebaseDatabase.getInstance().getReference().child("Callbacks");
             String command = FixStringsFromFirebase(((JsonObject) json).get("command").toString());
             String event = FixStringsFromFirebase(((JsonObject) json).get("event").toString());
             String name = FixStringsFromFirebase(((JsonObject) json).get("name").toString());
 
             Iterable <DataSnapshot> calls = callBackSnap.getChildren();
             //add ipAddress to Callback
+            String destination;
             String address;
             String key;
             for (DataSnapshot child : calls) {
+                while (!FirebaseUpdateDone(child)) {
+                    System.out.println("Waiting for Firebase");
+                }
+                child = callBackSnap.child(child.getKey());
                 String source = FixStringsFromFirebase((String) child.child("Source").getValue());
                 String attribute = FixStringsFromFirebase((String) child.child("Attribute").getValue());
                 if (name.equals(source) && event.equals(attribute)) {
                     key = FixStringsFromFirebase((String) child.child("Key").getValue());
-                    address = FixStringsFromFirebase((String) child.child("zClient Address").getValue());
+                    destination = FixStringsFromFirebase((String) child.child("Destination").getValue());
+                    address = FixStringsFromFirebase((String) snap.child(destination).child("zClient Address").getValue());
                     JsonObject jsonObject = new JsonObject();
+                    jsonObject.addProperty("command", "remote-command");
                     jsonObject.addProperty("attribute", attribute);
                     jsonObject.addProperty("source", source);
                     jsonObject.addProperty("key", key);
@@ -364,8 +389,18 @@ public class MainActivity extends AppCompatActivity {
 
                 }
             }
-            System.out.println("done");
+        }
 
+        private boolean FirebaseUpdateDone(DataSnapshot child) {
+            child = MainActivity.this.callBackSnap.child(child.getKey());
+            System.out.println("Check");
+            //Error caused when the datasnapshot hasn't updated completely from firebase in time
+            if (child.getChildrenCount() == 5) {
+                return true;
+            }
+            else {
+                return false;
+            }
         }
 
         private void sendToViableClient(JsonObject json, String clientAddress) {
@@ -374,6 +409,8 @@ public class MainActivity extends AppCompatActivity {
                 out = new PrintWriter(socket.getOutputStream(), true);
                 out.write(json.toString());
                 out.flush();
+                out.close();
+                socket.close();
             }catch (IOException e) {
                 e.printStackTrace();
             }
@@ -405,32 +442,32 @@ public class MainActivity extends AppCompatActivity {
 
     public boolean makeLocationNewInstance() {
         LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            // TODO: Consider calling
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]
-                        {Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-                return false;
-            }
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                        1);
-                return false;
-            }
-            try {
-                if (locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) == null) {
-                    throw new Exception();
-                }
-                Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                double longitude = location.getLongitude();
-                double latitude = location.getLatitude();
-                this.currLocation = new com.example.travis.berryloc.Model.Location(longitude, latitude);
-            }catch(Exception e) {
-                e.printStackTrace();
-                locationResults.setText("No GPS Fix, Please Try Again");
-            }
-            return true;
+        // TODO: Consider calling
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]
+                    {Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+            return false;
         }
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
+                    1);
+            return false;
+        }
+        try {
+            if (locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) == null) {
+                throw new Exception();
+            }
+            Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            double longitude = location.getLongitude();
+            double latitude = location.getLatitude();
+            this.currLocation = new com.example.travis.berryloc.Model.Location(longitude, latitude);
+        }catch(Exception e) {
+            e.printStackTrace();
+            locationResults.setText("No GPS Fix, Please Try Again");
+        }
+        return true;
+    }
 
 
     public void UpdateLocationOnly() {
@@ -488,7 +525,7 @@ public class MainActivity extends AppCompatActivity {
 
     public class AutoLocationUpdate {
         public Timer timer;
-       public synchronized void startAutoUpdate() {
+        public synchronized void startAutoUpdate() {
             if (timer == null) {
                 TimerTask task = new TimerTask() {
                     @Override
@@ -499,7 +536,7 @@ public class MainActivity extends AppCompatActivity {
                 timer = new Timer();
                 timer.scheduleAtFixedRate(task, 0, 30000);
             }
-       }
+        }
     }
 
     public void updateCommands() { //Update Attributes in the code running on this server's client

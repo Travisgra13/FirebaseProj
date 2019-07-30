@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">berryLoc</string>
+    <string name="app_name">Widget</string>
     <string name="waiting_for_current_location_request">Server Started</string>
     <string name="get_current_loc">Get Current Location</string>
     <string name="prompt">Keep an eye on the status at the bottom, Ensure that the server has started</string>
