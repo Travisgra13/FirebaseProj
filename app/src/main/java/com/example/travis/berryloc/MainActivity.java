@@ -2,11 +2,13 @@ package com.example.travis.berryloc;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
 import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
@@ -15,6 +17,8 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.format.Formatter;
+import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -36,6 +40,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import com.google.gson.stream.MalformedJsonException;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -65,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     private com.example.travis.berryloc.Model.Location currLocation;
     private TextView locationResults;
     private EditText widgetName;
+    private Button restartButton;
     private Handshake handshake;
     private DataSnapshot snap;
     private DataSnapshot callBackSnap;
@@ -116,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
                 if (handshake.getCode() == null) {
                     return;
                 }
-                updateCommands();
+                //updateCommands();
                 if (dataSnapshot.getKey().equals(MainActivity.this.id)) {
                     final Event event = dataSnapshot.getValue(Event.class);
                     Thread thread = new Thread(new Runnable() {
@@ -145,6 +151,16 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         locationResults = findViewById(R.id.currLocResults);
+        restartButton = findViewById(R.id.restartButton);
+        restartButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this.getApplicationContext(), MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                MainActivity.this.getApplicationContext().startActivity(intent);
+                Runtime.getRuntime().exit(0);
+            }
+        });
         widgetName = findViewById(R.id.widgetId);
         widgetName.setText("Travis' Phone");
         id = widgetName.getText().toString();
@@ -177,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
                 completeHandshake();
                 PurgeCallback(MainActivity.this.id);
                 readInRemoteCalls(); //reads in the remote calls from the client
-                updateCommands();
+                //updateCommands();
                 doAll();
                 buttonPressProcess();
 
@@ -313,7 +329,7 @@ public class MainActivity extends AppCompatActivity {
                     JsonParser jsonParser = new JsonParser();
                     while((inputCodeLine = in.readLine()) != null) {
                         codeSb.append(inputCodeLine);
-                        JsonElement json = jsonParser.parse(inputCodeLine);
+                        JsonElement json =jsonParser.parse(inputCodeLine);
                         System.out.println(json);
                         if (((JsonObject) json).get("status") != null) {
                             PurgeCallback(MainActivity.this.id);
@@ -363,8 +379,13 @@ public class MainActivity extends AppCompatActivity {
             String command = FixStringsFromFirebase(((JsonObject) json).get("command").toString());
             String event = FixStringsFromFirebase(((JsonObject) json).get("event").toString());
             String name = FixStringsFromFirebase(((JsonObject) json).get("name").toString());
-
-            Iterable <DataSnapshot> calls = callBackSnap.getChildren();
+            Iterable<DataSnapshot> calls;
+        if (callBackSnap != null) {
+            calls = callBackSnap.getChildren();
+        }
+        else {
+            return;
+        }
             //add ipAddress to Callback
             String destination;
             String address;
@@ -503,14 +524,14 @@ public class MainActivity extends AppCompatActivity {
         callBacks.push();
     }
 
-    public void AddToCallbackList() {
+   /* public void AddToCallbackList() {
         //work here
         myDatabase = FirebaseDatabase.getInstance().getReference().child("Commands").child(this.id);
         for(int i = 0; i < commands.size(); i++) {
             myDatabase.child("command " + (i + 1)).setValue(commands.get(i));
         }
         myDatabase.push();
-    }
+    }*/
 
 
     public void doAll() {
@@ -539,12 +560,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void updateCommands() { //Update Attributes in the code running on this server's client
+    /*public void updateCommands() { //Update Attributes in the code running on this server's client
         AttributeParser attributeParser = new AttributeParser(handshake.getCode());
         commands = attributeParser.parse();
-        AddToCallbackList();
+        //AddToCallbackList();
 
-    }
+    }*/
 
 
 

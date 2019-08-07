@@ -5,4 +5,5 @@
     <string name="prompt">Keep an eye on the status at the bottom, Ensure that the server has started</string>
     <string name="firebaseInstruct">Send to Firebase</string>
     <string name="doAll">Complete Both Tasks</string>
+    <string name="restartPrompt">Restart</string>
 </resources>
