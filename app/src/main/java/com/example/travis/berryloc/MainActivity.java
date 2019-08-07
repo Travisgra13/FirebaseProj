@@ -380,12 +380,12 @@ public class MainActivity extends AppCompatActivity {
             String event = FixStringsFromFirebase(((JsonObject) json).get("event").toString());
             String name = FixStringsFromFirebase(((JsonObject) json).get("name").toString());
             Iterable<DataSnapshot> calls;
-        if (callBackSnap != null) {
-            calls = callBackSnap.getChildren();
-        }
-        else {
-            return;
-        }
+            if (callBackSnap != null) {
+                calls = callBackSnap.getChildren();
+            }
+            else {
+                return;
+            }
             //add ipAddress to Callback
             String destination;
             String address;
