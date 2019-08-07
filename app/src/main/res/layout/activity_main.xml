@@ -35,6 +35,7 @@
         android:layout_marginRight="8dp"
         android:layout_marginBottom="148dp"
         android:gravity="center_horizontal"
+        android:textStyle="bold"
         android:text="@string/waiting_for_current_location_request"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
