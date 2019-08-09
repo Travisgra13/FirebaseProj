@@ -255,7 +255,7 @@ public class MainActivity extends AppCompatActivity {
 
         private void completeHandshake() {
             try {
-                Socket socket = new Socket(address, 6666);
+                Socket socket = new Socket(address, 8080);
                 out = new PrintWriter(socket.getOutputStream(), true);
                 JsonObject jsonObject = new JsonObject();
                 jsonObject.addProperty("command", "fixedip-ack");
@@ -281,7 +281,7 @@ public class MainActivity extends AppCompatActivity {
 
         public void sendCodeToClient(Event event) {
             try {
-                Socket socket = new Socket(address, 6666);
+                Socket socket = new Socket(address, 8080);
                 out = new PrintWriter(socket.getOutputStream(), true);
                 String command = "code-save ";
                 if (event.getCode() == null) {
@@ -427,7 +427,7 @@ public class MainActivity extends AppCompatActivity {
 
         private void sendToViableClient(JsonObject json, String clientAddress) {
             try {
-                Socket socket = new Socket(clientAddress, 6666);
+                Socket socket = new Socket(clientAddress, 8080);
                 out = new PrintWriter(socket.getOutputStream(), true);
                 out.write(json.toString());
                 out.flush();
